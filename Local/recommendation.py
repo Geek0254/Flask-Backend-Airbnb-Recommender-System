@@ -9,7 +9,7 @@ import numpy as np
 
 recommendation_bp = Blueprint('recommendation', __name__)
 
-# Load available cities from a file or hard-code them
+# Load available cities from a file 
 available_cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
 
 def load_data(city):
