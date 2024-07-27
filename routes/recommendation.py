@@ -1,24 +1,16 @@
 from flask import Blueprint, request, jsonify
 import pandas as pd
 import pickle
+import os
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.neighbors import KNeighborsRegressor
 import numpy as np
 
 recommendation_bp = Blueprint('recommendation', __name__)
 
-# Load available cities from a file or hard-code them
+# Pre-defined available cities
 available_cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
-
-def load_data(city):
-    file_path = f'./datasets/{city}/{city}_airbnb_listings.csv'
-    try:
-        return pd.read_csv(file_path)
-    except Exception as e:
-        print(f"Error loading data for {city}: {e}")
-        return None
 
 def load_model(city, model_type):
     try:
@@ -45,14 +37,14 @@ def recommend():
         data = request.get_json()
         city = data['city']
         user_preferences = data['user_preferences']
-        
-        df = load_data(city)
+
+        df = load_model(city, 'data')  # Load the pre-processed dataframe model
         if df is None:
-            return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
-        
+            return jsonify({"error": f"Data model for city {city} could not be loaded."}), 500
+
         # Clean and convert price column
         df['price'] = df['price'].str.replace('$', '').str.replace(',', '').astype(float)
-        
+
         # Ensure data types are consistent
         df['number_of_reviews'] = df['number_of_reviews'].astype(int)
         df['availability_365'] = df['availability_365'].astype(int)
@@ -74,7 +66,7 @@ def recommend():
             (df['beds'] >= user_preferences['min_beds']) &
             (df['bedrooms'] >= user_preferences['min_bedrooms'])
         ]
-        
+
         if filtered_data.empty:
             return jsonify({
                 "message": "No listings match the given preferences using KNN. Do you want to proceed with Content-Based Filtering?",
@@ -112,17 +104,17 @@ def recommend_cbf():
         data = request.get_json()
         city = data['city']
         user_preferences = data['user_preferences']
-        
-        df = load_data(city)
+
+        df = load_model(city, 'data')  # Load the pre-processed dataframe model
         if df is None:
-            return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
+            return jsonify({"error": f"Data model for city {city} could not be loaded."}), 500
 
         cbf_features = ['neighbourhood_cleansed', 'room_type', 'property_type']
         vectorizer = load_model(city, 'cbf')
         if vectorizer is None:
             return jsonify({"error": f"CBF model for city {city} could not be loaded."}), 500
         recommendations = get_recommendations(df, user_preferences, cbf_features, vectorizer)
-        
+
         # Replace NaN with None for JSON serialization
         recommendations = recommendations.replace({np.nan: None})
 
@@ -147,7 +139,7 @@ def get_neighborhoods():
     if not city or city not in available_cities:
         return jsonify({"error": "Invalid or missing city parameter"}), 400
 
-    df = load_data(city)
+    df = load_model(city, 'data')
     if df is None:
         return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
@@ -160,7 +152,7 @@ def get_room_types():
     if not city or city not in available_cities:
         return jsonify({"error": "Invalid or missing city parameter"}), 400
 
-    df = load_data(city)
+    df = load_model(city, 'data')
     if df is None:
         return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
@@ -173,7 +165,7 @@ def get_property_types():
     if not city or city not in available_cities:
         return jsonify({"error": "Invalid or missing city parameter"}), 400
 
-    df = load_data(city)
+    df = load_model(city, 'data')
     if df is None:
         return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
