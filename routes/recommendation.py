@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 import pandas as pd
+import sqlite3
 import pickle
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
@@ -9,16 +10,14 @@ import numpy as np
 
 recommendation_bp = Blueprint('recommendation', __name__)
 
-# Load available cities from a file or hard-code them
-available_cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
+DB_PATH = 'airbnb_listings.db'
 
-def load_data(city):
-    file_path = f'./datasets/{city}/{city}_airbnb_listings.csv'
-    try:
-        return pd.read_csv(file_path)
-    except Exception as e:
-        print(f"Error loading data for {city}: {e}")
-        return None
+def load_data_from_db(city):
+    conn = sqlite3.connect(DB_PATH)
+    query = f"SELECT * FROM {city}_listings"
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
 
 def load_model(city, model_type):
     try:
@@ -46,14 +45,11 @@ def recommend():
         city = data['city']
         user_preferences = data['user_preferences']
         
-        df = load_data(city)
-        if df is None:
+        df = load_data_from_db(city)
+        if df is None or df.empty:
             return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
         
-        # Clean and convert price column
         df['price'] = df['price'].str.replace('$', '').str.replace(',', '').astype(float)
-        
-        # Ensure data types are consistent
         df['number_of_reviews'] = df['number_of_reviews'].astype(int)
         df['availability_365'] = df['availability_365'].astype(int)
         df['review_scores_rating'] = df['review_scores_rating'].astype(float)
@@ -92,7 +88,6 @@ def recommend():
             filtered_data['Predicted Review Rate'] = knn.predict(X_scaled)
             recommendations = filtered_data.head(10)
 
-        # Replace NaN with None for JSON serialization
         recommendations = recommendations.replace({np.nan: None})
 
         recommendations_table = recommendations[['name', 'neighbourhood_cleansed', 'neighbourhood_group_cleansed', 'price', 'number_of_reviews', 'availability_365', 'review_scores_rating', 'reviews_per_month', 'host_response_time', 'host_response_rate', 'instant_bookable', 'listing_url', 'picture_url']]
@@ -113,8 +108,8 @@ def recommend_cbf():
         city = data['city']
         user_preferences = data['user_preferences']
         
-        df = load_data(city)
-        if df is None:
+        df = load_data_from_db(city)
+        if df is None or df.empty:
             return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
         cbf_features = ['neighbourhood_cleansed', 'room_type', 'property_type']
@@ -123,7 +118,6 @@ def recommend_cbf():
             return jsonify({"error": f"CBF model for city {city} could not be loaded."}), 500
         recommendations = get_recommendations(df, user_preferences, cbf_features, vectorizer)
         
-        # Replace NaN with None for JSON serialization
         recommendations = recommendations.replace({np.nan: None})
 
         recommendations_table = recommendations[['name', 'neighbourhood_cleansed', 'neighbourhood_group_cleansed', 'price', 'number_of_reviews', 'availability_365', 'review_scores_rating', 'reviews_per_month', 'host_response_time', 'host_response_rate', 'instant_bookable', 'listing_url', 'picture_url']]
@@ -139,43 +133,44 @@ def recommend_cbf():
 
 @recommendation_bp.route('/cities', methods=['GET'])
 def get_cities():
-    return jsonify({"cities": available_cities})
+    cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
+    return jsonify({"cities": cities})
 
 @recommendation_bp.route('/neighborhoods', methods=['GET'])
 def get_neighborhoods():
     city = request.args.get('city')
-    if not city or city not in available_cities:
-        return jsonify({"error": "Invalid or missing city parameter"}), 400
-
-    df = load_data(city)
-    if df is None:
-        return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
-
-    neighborhoods = df['neighbourhood_cleansed'].unique().tolist()
-    return jsonify({"neighborhoods": neighborhoods})
+    if not city:
+        return jsonify({"error": "City not provided"}), 400
+    try:
+        df = load_data_from_db(city)
+        neighborhoods = df['neighbourhood_cleansed'].unique().tolist()
+        return jsonify({"neighborhoods": neighborhoods})
+    except Exception as e:
+        print(f"Error loading neighborhoods for city {city}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @recommendation_bp.route('/room_types', methods=['GET'])
 def get_room_types():
     city = request.args.get('city')
-    if not city or city not in available_cities:
-        return jsonify({"error": "Invalid or missing city parameter"}), 400
-
-    df = load_data(city)
-    if df is None:
-        return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
-
-    room_types = df['room_type'].unique().tolist()
-    return jsonify({"room_types": room_types})
+    if not city:
+        return jsonify({"error": "City not provided"}), 400
+    try:
+        df = load_data_from_db(city)
+        room_types = df['room_type'].unique().tolist()
+        return jsonify({"room_types": room_types})
+    except Exception as e:
+        print(f"Error loading room types for city {city}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @recommendation_bp.route('/property_types', methods=['GET'])
 def get_property_types():
     city = request.args.get('city')
-    if not city or city not in available_cities:
-        return jsonify({"error": "Invalid or missing city parameter"}), 400
-
-    df = load_data(city)
-    if df is None:
-        return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
-
-    property_types = df['property_type'].unique().tolist()
-    return jsonify({"property_types": property_types})
+    if not city:
+        return jsonify({"error": "City not provided"}), 400
+    try:
+        df = load_data_from_db(city)
+        property_types = df['property_type'].unique().tolist()
+        return jsonify({"property_types": property_types})
+    except Exception as e:
+        print(f"Error loading property types for city {city}: {e}")
+        return jsonify({"error": str(e)}), 500
