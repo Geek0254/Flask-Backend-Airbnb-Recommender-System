@@ -1,80 +1,29 @@
 from flask import Blueprint, request, jsonify
 import pandas as pd
 import pickle
-import requests
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.neighbors import KNeighborsRegressor
 import numpy as np
-import io
 
 recommendation_bp = Blueprint('recommendation', __name__)
 
-# Pre-defined available cities
+# Load available cities from a file or hard-code them
 available_cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
 
-# Google Drive file IDs for models
-model_ids = {
-    'cbf': {
-        'amsterdam': '1ffV9JooTXfNRCCvoE4mwOSFam9HS9IRp',
-        'barcelona': '1AVuEmY_tylkefageCOzpHzz91EoFe253',
-        'berlin': '1obB0TMBirw0opgF9Og6Bzo3AOEpQaEQh',
-        'brussels': '1a4bkOTda12J2_TDMwUkvqP6owMmC8Xdg',
-        'nyc': '1UJ1zbdYXq-lxpQBik6N3xWvTpX0r_R6G',
-        'rome': '1rx8HLOz94mxMLGzo976HGPr7-sdz13Mq',
-        'sydney': '1FJpI3NUJwaeNpVDrSJAhJ976sNvZ5LS-',
-        'tokyo': '1Wc1vakgSzEy0Yw8Kcum4edhGyL00J13T'
-    },
-    'knn': {
-        'amsterdam': '1Yqra7lfjSycoA_FbIfv1WOZ0AekMk7rT',
-        'barcelona': '1jSwC43RC2l3STLBaTuqgYKPnINKSaD7N',
-        'berlin': '1wC_egbte22uQUWRJd6rmpEI44eBkV79U',
-        'brussels': '1YasKDdScmBNG1I1zf0k1B0JLbX_BkYHL',
-        'nyc': '1SRVERE12WuotFm7cT0LGpo58fAd61Giz',
-        'rome': '1OTkwlhXrUigJaXQOY2ssA4b1Tzt4VF5n',
-        'sydney': '1d2kldN4gCBv2goMIzmMg3tMegUKGtv2g',
-        'tokyo': '1uumWSjJroNQZYAcKqMTnI0PoLvnshUt2'
-    },
-    'scaler': {
-        'amsterdam': '19np-E4BUZ42aVwNoHVYmRVgJLPbfFuL5',
-        'barcelona': '1L1PzCLWGD2tFaVVlr2d5eYvidnCUKcIO',
-        'berlin': '1xHyAouE07BYrfIl3pEQxfGfBxKpm-Lw-',
-        'brussels': '1_IirbDXJ_IU9l9XZLLeOihzhKPw5e4xP',
-        'nyc': '12DZbgDcqXRrP6fZ7a5nIPHFlKZZk-Se-',
-        'rome': '1EpXig7ivgVT-Wf4ZW9XzXhydyw2Ap9Bj',
-        'sydney': '1-QKvBRLVj_ACBf4EyJ2HmJYBpPyeHffb',
-        'tokyo': '1bDRoM2MqQV2ebq3Wmr2yGZER8PkSs0oo'
-    },
-    'data': {
-        'amsterdam': '1MAB_koP-CPDkhjVs3DUbeU_jLuD3HCMD',
-        'barcelona': '1vGDtFTscAXPHdtFHcbOBo47NW_qzEDSd',
-        'berlin': '13MaITpBsID3lHpPadgDIMFJNNDs4nA5l',
-        'brussels': '19EaSibkDr7VGdUd5Afo_JF1rMe_8MoEy',
-        'nyc': '1U5LY2d6MPwVVjhECl5m8MpFpo-bDPLxj',
-        'rome': '1ua6XGqqGCNq6yHBtFYxo6_DuH9sOfURD',
-        'sydney': '1l0MY9e3FoV-qNkD9arAdjo8qIXvy4H0T',
-        'tokyo': '1CI_JxuNs2ZY0rCHiw_YoE8SJg8lLME1w'
-    }
-}
-
-def get_direct_download_link(file_id):
-    return f"https://drive.google.com/uc?export=download&id={file_id}"
-
-def download_file(url):
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    return response.content
+def load_data(city):
+    file_path = f'./datasets/{city}/{city}_airbnb_listings.csv'
+    try:
+        return pd.read_csv(file_path)
+    except Exception as e:
+        print(f"Error loading data for {city}: {e}")
+        return None
 
 def load_model(city, model_type):
-    file_id = model_ids[model_type].get(city)
-    if not file_id:
-        print(f"No download link for {model_type} model for city: {city}")
-        return None
     try:
-        file_url = get_direct_download_link(file_id)
-        content = download_file(file_url)
-        model = pickle.load(io.BytesIO(content))
-        return model
+        with open(f'./models/{model_type}_model_{city}.pkl', 'rb') as file:
+            return pickle.load(file)
     except Exception as e:
         print(f"Error loading {model_type} model for {city}: {e}")
         return None
@@ -96,14 +45,14 @@ def recommend():
         data = request.get_json()
         city = data['city']
         user_preferences = data['user_preferences']
-
-        df = load_model(city, 'data')  # Load the pre-processed dataframe model
+        
+        df = load_data(city)
         if df is None:
-            return jsonify({"error": f"Data model for city {city} could not be loaded."}), 500
-
+            return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
+        
         # Clean and convert price column
         df['price'] = df['price'].str.replace('$', '').str.replace(',', '').astype(float)
-
+        
         # Ensure data types are consistent
         df['number_of_reviews'] = df['number_of_reviews'].astype(int)
         df['availability_365'] = df['availability_365'].astype(int)
@@ -125,7 +74,7 @@ def recommend():
             (df['beds'] >= user_preferences['min_beds']) &
             (df['bedrooms'] >= user_preferences['min_bedrooms'])
         ]
-
+        
         if filtered_data.empty:
             return jsonify({
                 "message": "No listings match the given preferences using KNN. Do you want to proceed with Content-Based Filtering?",
@@ -163,17 +112,17 @@ def recommend_cbf():
         data = request.get_json()
         city = data['city']
         user_preferences = data['user_preferences']
-
-        df = load_model(city, 'data')  # Load the pre-processed dataframe model
+        
+        df = load_data(city)
         if df is None:
-            return jsonify({"error": f"Data model for city {city} could not be loaded."}), 500
+            return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
         cbf_features = ['neighbourhood_cleansed', 'room_type', 'property_type']
         vectorizer = load_model(city, 'cbf')
         if vectorizer is None:
             return jsonify({"error": f"CBF model for city {city} could not be loaded."}), 500
         recommendations = get_recommendations(df, user_preferences, cbf_features, vectorizer)
-
+        
         # Replace NaN with None for JSON serialization
         recommendations = recommendations.replace({np.nan: None})
 
@@ -198,7 +147,7 @@ def get_neighborhoods():
     if not city or city not in available_cities:
         return jsonify({"error": "Invalid or missing city parameter"}), 400
 
-    df = load_model(city, 'data')
+    df = load_data(city)
     if df is None:
         return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
@@ -211,7 +160,7 @@ def get_room_types():
     if not city or city not in available_cities:
         return jsonify({"error": "Invalid or missing city parameter"}), 400
 
-    df = load_model(city, 'data')
+    df = load_data(city)
     if df is None:
         return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
@@ -224,7 +173,7 @@ def get_property_types():
     if not city or city not in available_cities:
         return jsonify({"error": "Invalid or missing city parameter"}), 400
 
-    df = load_model(city, 'data')
+    df = load_data(city)
     if df is None:
         return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
 
