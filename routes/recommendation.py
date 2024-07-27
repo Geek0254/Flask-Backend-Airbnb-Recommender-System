@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 import pandas as pd
 import pickle
 import os
+import requests
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -12,9 +13,58 @@ recommendation_bp = Blueprint('recommendation', __name__)
 # Pre-defined available cities
 available_cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
 
+# Google Drive direct download links for models
+model_links = {
+    'cbf': {
+        'amsterdam': 'https://drive.google.com/uc?export=download&id=1ffV9JooTXfNRCCvoE4mwOSFam9HS9IRp',
+        'barcelona': 'https://drive.google.com/uc?export=download&id=1AVuEmY_tylkefageCOzpHzz91EoFe253',
+        'berlin': 'https://drive.google.com/uc?export=download&id=1obB0TMBirw0opgF9Og6Bzo3AOEpQaEQh',
+        'brussels': 'https://drive.google.com/uc?export=download&id=1a4bkOTda12J2_TDMwUkvqP6owMmC8Xdg',
+        'nyc': 'https://drive.google.com/uc?export=download&id=1UJ1zbdYXq-lxpQBik6N3xWvTpX0r_R6G',
+        'rome': 'https://drive.google.com/uc?export=download&id=1rx8HLOz94mxMLGzo976HGPr7-sdz13Mq',
+        'sydney': 'https://drive.google.com/uc?export=download&id=1FJpI3NUJwaeNpVDrSJAhJ976sNvZ5LS-',
+        'tokyo': 'https://drive.google.com/uc?export=download&id=1Wc1vakgSzEy0Yw8Kcum4edhGyL00J13T'
+    },
+    'knn': {
+        'amsterdam': 'https://drive.google.com/uc?export=download&id=1Yqra7lfjSycoA_FbIfv1WOZ0AekMk7rT',
+        'barcelona': 'https://drive.google.com/uc?export=download&id=1jSwC43RC2l3STLBaTuqgYKPnINKSaD7N',
+        'berlin': 'https://drive.google.com/uc?export=download&id=1wC_egbte22uQUWRJd6rmpEI44eBkV79U',
+        'brussels': 'https://drive.google.com/uc?export=download&id=1YasKDdScmBNG1I1zf0k1B0JLbX_BkYHL',
+        'nyc': 'https://drive.google.com/uc?export=download&id=1SRVERE12WuotFm7cT0LGpo58fAd61Giz',
+        'rome': 'https://drive.google.com/uc?export=download&id=1OTkwlhXrUigJaXQOY2ssA4b1Tzt4VF5n',
+        'sydney': 'https://drive.google.com/uc?export=download&id=1d2kldN4gCBv2goMIzmMg3tMegUKGtv2g',
+        'tokyo': 'https://drive.google.com/uc?export=download&id=1uumWSjJroNQZYAcKqMTnI0PoLvnshUt2'
+    },
+    'scaler': {
+        'amsterdam': 'https://drive.google.com/uc?export=download&id=19np-E4BUZ42aVwNoHVYmRVgJLPbfFuL5',
+        'barcelona': 'https://drive.google.com/uc?export=download&id=1L1PzCLWGD2tFaVVlr2d5eYvidnCUKcIO',
+        'berlin': 'https://drive.google.com/uc?export=download&id=1xHyAouE07BYrfIl3pEQxfGfBxKpm-Lw-',
+        'brussels': 'https://drive.google.com/uc?export=download&id=1_IirbDXJ_IU9l9XZLLeOihzhKPw5e4xP',
+        'nyc': 'https://drive.google.com/uc?export=download&id=12DZbgDcqXRrP6fZ7a5nIPHFlKZZk-Se-',
+        'rome': 'https://drive.google.com/uc?export=download&id=1EpXig7ivgVT-Wf4ZW9XzXhydyw2Ap9Bj',
+        'sydney': 'https://drive.google.com/uc?export=download&id=1-QKvBRLVj_ACBf4EyJ2HmJYBpPyeHffb',
+        'tokyo': 'https://drive.google.com/uc?export=download&id=1bDRoM2MqQV2ebq3Wmr2yGZER8PkSs0oo'
+    }
+}
+
+def download_file(url, destination):
+    response = requests.get(url, stream=True)
+    with open(destination, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=32768):
+            if chunk:
+                f.write(chunk)
+
 def load_model(city, model_type):
+    model_path = f'./models/{model_type}_model_{city}.pkl'
+    if not os.path.exists(model_path):
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        file_url = model_links[model_type].get(city)
+        if not file_url:
+            print(f"No download link for {model_type} model for city: {city}")
+            return None
+        download_file(file_url, model_path)
     try:
-        with open(f'./models/{model_type}_model_{city}.pkl', 'rb') as file:
+        with open(model_path, 'rb') as file:
             return pickle.load(file)
     except Exception as e:
         print(f"Error loading {model_type} model for {city}: {e}")
