@@ -1,71 +1,80 @@
 from flask import Blueprint, request, jsonify
 import pandas as pd
 import pickle
-import os
 import requests
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
+import io
 
 recommendation_bp = Blueprint('recommendation', __name__)
 
 # Pre-defined available cities
 available_cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
 
-# Google Drive direct download links for models
-model_links = {
+# Google Drive file IDs for models
+model_ids = {
     'cbf': {
-        'amsterdam': 'https://drive.google.com/uc?export=download&id=1ffV9JooTXfNRCCvoE4mwOSFam9HS9IRp',
-        'barcelona': 'https://drive.google.com/uc?export=download&id=1AVuEmY_tylkefageCOzpHzz91EoFe253',
-        'berlin': 'https://drive.google.com/uc?export=download&id=1obB0TMBirw0opgF9Og6Bzo3AOEpQaEQh',
-        'brussels': 'https://drive.google.com/uc?export=download&id=1a4bkOTda12J2_TDMwUkvqP6owMmC8Xdg',
-        'nyc': 'https://drive.google.com/uc?export=download&id=1UJ1zbdYXq-lxpQBik6N3xWvTpX0r_R6G',
-        'rome': 'https://drive.google.com/uc?export=download&id=1rx8HLOz94mxMLGzo976HGPr7-sdz13Mq',
-        'sydney': 'https://drive.google.com/uc?export=download&id=1FJpI3NUJwaeNpVDrSJAhJ976sNvZ5LS-',
-        'tokyo': 'https://drive.google.com/uc?export=download&id=1Wc1vakgSzEy0Yw8Kcum4edhGyL00J13T'
+        'amsterdam': '1ffV9JooTXfNRCCvoE4mwOSFam9HS9IRp',
+        'barcelona': '1AVuEmY_tylkefageCOzpHzz91EoFe253',
+        'berlin': '1obB0TMBirw0opgF9Og6Bzo3AOEpQaEQh',
+        'brussels': '1a4bkOTda12J2_TDMwUkvqP6owMmC8Xdg',
+        'nyc': '1UJ1zbdYXq-lxpQBik6N3xWvTpX0r_R6G',
+        'rome': '1rx8HLOz94mxMLGzo976HGPr7-sdz13Mq',
+        'sydney': '1FJpI3NUJwaeNpVDrSJAhJ976sNvZ5LS-',
+        'tokyo': '1Wc1vakgSzEy0Yw8Kcum4edhGyL00J13T'
     },
     'knn': {
-        'amsterdam': 'https://drive.google.com/uc?export=download&id=1Yqra7lfjSycoA_FbIfv1WOZ0AekMk7rT',
-        'barcelona': 'https://drive.google.com/uc?export=download&id=1jSwC43RC2l3STLBaTuqgYKPnINKSaD7N',
-        'berlin': 'https://drive.google.com/uc?export=download&id=1wC_egbte22uQUWRJd6rmpEI44eBkV79U',
-        'brussels': 'https://drive.google.com/uc?export=download&id=1YasKDdScmBNG1I1zf0k1B0JLbX_BkYHL',
-        'nyc': 'https://drive.google.com/uc?export=download&id=1SRVERE12WuotFm7cT0LGpo58fAd61Giz',
-        'rome': 'https://drive.google.com/uc?export=download&id=1OTkwlhXrUigJaXQOY2ssA4b1Tzt4VF5n',
-        'sydney': 'https://drive.google.com/uc?export=download&id=1d2kldN4gCBv2goMIzmMg3tMegUKGtv2g',
-        'tokyo': 'https://drive.google.com/uc?export=download&id=1uumWSjJroNQZYAcKqMTnI0PoLvnshUt2'
+        'amsterdam': '1Yqra7lfjSycoA_FbIfv1WOZ0AekMk7rT',
+        'barcelona': '1jSwC43RC2l3STLBaTuqgYKPnINKSaD7N',
+        'berlin': '1wC_egbte22uQUWRJd6rmpEI44eBkV79U',
+        'brussels': '1YasKDdScmBNG1I1zf0k1B0JLbX_BkYHL',
+        'nyc': '1SRVERE12WuotFm7cT0LGpo58fAd61Giz',
+        'rome': '1OTkwlhXrUigJaXQOY2ssA4b1Tzt4VF5n',
+        'sydney': '1d2kldN4gCBv2goMIzmMg3tMegUKGtv2g',
+        'tokyo': '1uumWSjJroNQZYAcKqMTnI0PoLvnshUt2'
     },
     'scaler': {
-        'amsterdam': 'https://drive.google.com/uc?export=download&id=19np-E4BUZ42aVwNoHVYmRVgJLPbfFuL5',
-        'barcelona': 'https://drive.google.com/uc?export=download&id=1L1PzCLWGD2tFaVVlr2d5eYvidnCUKcIO',
-        'berlin': 'https://drive.google.com/uc?export=download&id=1xHyAouE07BYrfIl3pEQxfGfBxKpm-Lw-',
-        'brussels': 'https://drive.google.com/uc?export=download&id=1_IirbDXJ_IU9l9XZLLeOihzhKPw5e4xP',
-        'nyc': 'https://drive.google.com/uc?export=download&id=12DZbgDcqXRrP6fZ7a5nIPHFlKZZk-Se-',
-        'rome': 'https://drive.google.com/uc?export=download&id=1EpXig7ivgVT-Wf4ZW9XzXhydyw2Ap9Bj',
-        'sydney': 'https://drive.google.com/uc?export=download&id=1-QKvBRLVj_ACBf4EyJ2HmJYBpPyeHffb',
-        'tokyo': 'https://drive.google.com/uc?export=download&id=1bDRoM2MqQV2ebq3Wmr2yGZER8PkSs0oo'
+        'amsterdam': '19np-E4BUZ42aVwNoHVYmRVgJLPbfFuL5',
+        'barcelona': '1L1PzCLWGD2tFaVVlr2d5eYvidnCUKcIO',
+        'berlin': '1xHyAouE07BYrfIl3pEQxfGfBxKpm-Lw-',
+        'brussels': '1_IirbDXJ_IU9l9XZLLeOihzhKPw5e4xP',
+        'nyc': '12DZbgDcqXRrP6fZ7a5nIPHFlKZZk-Se-',
+        'rome': '1EpXig7ivgVT-Wf4ZW9XzXhydyw2Ap9Bj',
+        'sydney': '1-QKvBRLVj_ACBf4EyJ2HmJYBpPyeHffb',
+        'tokyo': '1bDRoM2MqQV2ebq3Wmr2yGZER8PkSs0oo'
+    },
+    'data': {
+        'amsterdam': '1MAB_koP-CPDkhjVs3DUbeU_jLuD3HCMD',
+        'barcelona': '1vGDtFTscAXPHdtFHcbOBo47NW_qzEDSd',
+        'berlin': '13MaITpBsID3lHpPadgDIMFJNNDs4nA5l',
+        'brussels': '19EaSibkDr7VGdUd5Afo_JF1rMe_8MoEy',
+        'nyc': '1U5LY2d6MPwVVjhECl5m8MpFpo-bDPLxj',
+        'rome': '1ua6XGqqGCNq6yHBtFYxo6_DuH9sOfURD',
+        'sydney': '1l0MY9e3FoV-qNkD9arAdjo8qIXvy4H0T',
+        'tokyo': '1CI_JxuNs2ZY0rCHiw_YoE8SJg8lLME1w'
     }
 }
 
-def download_file(url, destination):
+def get_direct_download_link(file_id):
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+def download_file(url):
     response = requests.get(url, stream=True)
-    with open(destination, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=32768):
-            if chunk:
-                f.write(chunk)
+    response.raise_for_status()
+    return response.content
 
 def load_model(city, model_type):
-    model_path = f'./models/{model_type}_model_{city}.pkl'
-    if not os.path.exists(model_path):
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        file_url = model_links[model_type].get(city)
-        if not file_url:
-            print(f"No download link for {model_type} model for city: {city}")
-            return None
-        download_file(file_url, model_path)
+    file_id = model_ids[model_type].get(city)
+    if not file_id:
+        print(f"No download link for {model_type} model for city: {city}")
+        return None
     try:
-        with open(model_path, 'rb') as file:
-            return pickle.load(file)
+        file_url = get_direct_download_link(file_id)
+        content = download_file(file_url)
+        model = pickle.load(io.BytesIO(content))
+        return model
     except Exception as e:
         print(f"Error loading {model_type} model for {city}: {e}")
         return None
