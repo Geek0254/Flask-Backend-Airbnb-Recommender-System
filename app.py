@@ -1,7 +1,12 @@
 from flask import Flask, jsonify
 from routes.recommendation import recommendation_bp
 
+#Allow CORS for all domains on all routes
+from flask_cors import CORS
+
 app = Flask(__name__)
+CORS(app)
+
 app.register_blueprint(recommendation_bp)
 
 @app.route('/')

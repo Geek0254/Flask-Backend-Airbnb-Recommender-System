@@ -61,13 +61,13 @@ def train_and_save_models(city):
     # Save models
     with open(f'./models/knn_model_{city}.pkl', 'wb') as file:
         pickle.dump(knn, file)
-    with open(f'./models/scaler_{city}.pkl', 'wb') as file:
+    with open(f'./models/scaler_model_{city}.pkl', 'wb') as file:
         pickle.dump(scaler, file)
     with open(f'./models/cbf_model_{city}.pkl', 'wb') as file:
         pickle.dump(vectorizer, file)
 
 if __name__ == "__main__":
-    cities = ['nyc', 'berlin', 'paris', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'london', 'brussels']
+    cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
     for city in cities:
         print(f'Training models for {city}...')
         train_and_save_models(city)

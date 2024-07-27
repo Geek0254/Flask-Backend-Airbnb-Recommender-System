@@ -5,9 +5,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import KNeighborsRegressor
-from sklearn.model_selection import train_test_split
+import numpy as np
 
 recommendation_bp = Blueprint('recommendation', __name__)
+
+# Load available cities from a file or hard-code them
+available_cities = ['nyc', 'berlin', 'amsterdam', 'sydney', 'rome', 'tokyo', 'barcelona', 'brussels']
 
 def load_data(city):
     file_path = f'./datasets/{city}/{city}_airbnb_listings.csv'
@@ -73,14 +76,10 @@ def recommend():
         ]
         
         if filtered_data.empty:
-            message = "No listings match the given preferences using KNN. Proceeding to use Content-Based Filtering..."
-            print(message)
-            
-            cbf_features = ['neighbourhood_cleansed', 'room_type', 'property_type']
-            vectorizer = load_model(city, 'cbf')
-            if vectorizer is None:
-                return jsonify({"error": f"CBF model for city {city} could not be loaded."}), 500
-            recommendations = get_recommendations(df, user_preferences, cbf_features, vectorizer)
+            return jsonify({
+                "message": "No listings match the given preferences using KNN. Do you want to proceed with Content-Based Filtering?",
+                "status": "no_results_knn"
+            }), 200
         else:
             knn_features = ['price', 'number_of_reviews', 'availability_365', 'minimum_nights', 'reviews_per_month', 'beds', 'bedrooms']
             X = filtered_data[knn_features].fillna(0)
@@ -92,10 +91,91 @@ def recommend():
             X_scaled = scaler.transform(X)
             filtered_data['Predicted Review Rate'] = knn.predict(X_scaled)
             recommendations = filtered_data.head(10)
-        
-        recommendations_table = recommendations[['name', 'neighbourhood_cleansed', 'neighbourhood_group_cleansed', 'price', 'number_of_reviews', 'availability_365', 'review_scores_rating', 'reviews_per_month', 'host_response_time', 'host_response_rate', 'instant_bookable']]
-        return jsonify(recommendations_table.to_dict('records')), 200
+
+        # Replace NaN with None for JSON serialization
+        recommendations = recommendations.replace({np.nan: None})
+
+        recommendations_table = recommendations[['name', 'neighbourhood_cleansed', 'neighbourhood_group_cleansed', 'price', 'number_of_reviews', 'availability_365', 'review_scores_rating', 'reviews_per_month', 'host_response_time', 'host_response_rate', 'instant_bookable', 'listing_url', 'picture_url']]
+        return jsonify({
+            "message": "Recommendations fetched successfully",
+            "status": "results_found",
+            "recommendations": recommendations_table.to_dict('records')
+        }), 200
 
     except Exception as e:
         print(f"Error in recommendation endpoint: {e}")
         return jsonify({"error": str(e)}), 500
+
+@recommendation_bp.route('/recommend_cbf', methods=['POST'])
+def recommend_cbf():
+    try:
+        data = request.get_json()
+        city = data['city']
+        user_preferences = data['user_preferences']
+        
+        df = load_data(city)
+        if df is None:
+            return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
+
+        cbf_features = ['neighbourhood_cleansed', 'room_type', 'property_type']
+        vectorizer = load_model(city, 'cbf')
+        if vectorizer is None:
+            return jsonify({"error": f"CBF model for city {city} could not be loaded."}), 500
+        recommendations = get_recommendations(df, user_preferences, cbf_features, vectorizer)
+        
+        # Replace NaN with None for JSON serialization
+        recommendations = recommendations.replace({np.nan: None})
+
+        recommendations_table = recommendations[['name', 'neighbourhood_cleansed', 'neighbourhood_group_cleansed', 'price', 'number_of_reviews', 'availability_365', 'review_scores_rating', 'reviews_per_month', 'host_response_time', 'host_response_rate', 'instant_bookable', 'listing_url', 'picture_url']]
+        return jsonify({
+            "message": "Content-Based Filtering recommendations fetched successfully",
+            "status": "cbf_results",
+            "recommendations": recommendations_table.to_dict('records')
+        }), 200
+
+    except Exception as e:
+        print(f"Error in recommend_cbf endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@recommendation_bp.route('/cities', methods=['GET'])
+def get_cities():
+    return jsonify({"cities": available_cities})
+
+@recommendation_bp.route('/neighborhoods', methods=['GET'])
+def get_neighborhoods():
+    city = request.args.get('city')
+    if not city or city not in available_cities:
+        return jsonify({"error": "Invalid or missing city parameter"}), 400
+
+    df = load_data(city)
+    if df is None:
+        return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
+
+    neighborhoods = df['neighbourhood_cleansed'].unique().tolist()
+    return jsonify({"neighborhoods": neighborhoods})
+
+@recommendation_bp.route('/room_types', methods=['GET'])
+def get_room_types():
+    city = request.args.get('city')
+    if not city or city not in available_cities:
+        return jsonify({"error": "Invalid or missing city parameter"}), 400
+
+    df = load_data(city)
+    if df is None:
+        return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
+
+    room_types = df['room_type'].unique().tolist()
+    return jsonify({"room_types": room_types})
+
+@recommendation_bp.route('/property_types', methods=['GET'])
+def get_property_types():
+    city = request.args.get('city')
+    if not city or city not in available_cities:
+        return jsonify({"error": "Invalid or missing city parameter"}), 400
+
+    df = load_data(city)
+    if df is None:
+        return jsonify({"error": f"Data for city {city} could not be loaded."}), 500
+
+    property_types = df['property_type'].unique().tolist()
+    return jsonify({"property_types": property_types})
