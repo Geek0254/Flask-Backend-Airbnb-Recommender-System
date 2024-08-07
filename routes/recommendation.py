@@ -1,10 +1,7 @@
 from flask import Blueprint, request, jsonify
 import pandas as pd
 import pickle
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.neighbors import KNeighborsRegressor
 import numpy as np
 
 recommendation_bp = Blueprint('recommendation', __name__)
